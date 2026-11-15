@@ -1,0 +1,163 @@
+package dev.glassbreakcompat;
+
+import dev.betterglassbreaking.core.GameplayConfig;
+import dev.betterglassbreaking.core.GameplayRules.Source;
+import dev.betterglassbreaking.core.GameplayRules.SourceFacts;
+import dev.betterglassbreaking.forge.BetterGlassBreaking;
+import dev.betterglassbreaking.forge.GlassConfig;
+import dev.betterglassbreaking.forge.PaneImpacts;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.BooleanOp;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Server-side: when a player runs into glass, hand Better Glass Breaking a small grid of fracture
+ * impacts across the player's body so it carves its normal procedural, permanent, synced opening.
+ */
+public final class SprintImpactHandler {
+
+    private static final class Track {
+        double lastX, lastZ;
+        boolean init;
+        double peak;
+        double dirX, dirZ;
+        long nextTick;
+    }
+
+    private final Map<UUID, Track> tracks = new HashMap<>();
+
+    @SubscribeEvent
+    public void onPlayerTick(TickEvent.PlayerTickEvent e) {
+        if (e.phase != TickEvent.Phase.END || !(e.player instanceof ServerPlayer p)) return;
+        if (!CompatConfig.SPRINT_BREAK.get()) return;
+
+        Track t = tracks.computeIfAbsent(p.getUUID(), k -> new Track());
+        double dx = p.getX() - t.lastX, dz = p.getZ() - t.lastZ;
+        double speed = t.init ? Math.hypot(dx, dz) : 0.0;
+        t.lastX = p.getX();
+        t.lastZ = p.getZ();
+        t.init = true;
+        t.peak = Math.max(speed, t.peak * 0.85);
+        if (speed > 0.08) {
+            t.dirX = dx / speed;
+            t.dirZ = dz / speed;
+        }
+
+        if (p.isSpectator() || p.isPassenger() || p.isFallFlying()) return;
+        if (CompatConfig.REQUIRE_SPRINT.get() && !p.isSprinting()) return;
+        if (t.peak < CompatConfig.MIN_SPEED.get()) return;
+
+        ServerLevel level = p.serverLevel();
+        long now = level.getGameTime();
+        if (now < t.nextTick) return;
+
+        Vec3 dir = new Vec3(t.dirX, 0, t.dirZ);
+        if (dir.lengthSqr() < 1.0e-4) {
+            Vec3 look = p.getLookAngle();
+            dir = new Vec3(look.x, 0, look.z);
+            if (dir.lengthSqr() < 1.0e-4) return;
+        }
+        dir = dir.normalize();
+
+        List<BlockPos> targets = findTargets(level, p, dir);
+        if (targets.isEmpty()) return;
+
+        boolean any = false;
+        for (BlockPos pos : targets) {
+            any |= impact(level, p, pos, dir, Math.max(t.peak, 0.28));
+        }
+        if (any) t.nextTick = now + CompatConfig.COOLDOWN_TICKS.get();
+    }
+
+    @SubscribeEvent
+    public void onLogout(PlayerEvent.PlayerLoggedOutEvent e) {
+        tracks.remove(e.getEntity().getUUID());
+    }
+
+    /** Glass blocks that the player is pressing against, i.e. in front of them but not already overlapping. */
+    private static List<BlockPos> findTargets(ServerLevel level, ServerPlayer p, Vec3 dir) {
+        AABB body = p.getBoundingBox();
+        AABB probe = body.move(dir.x * 0.45, 0, dir.z * 0.45);
+        VoxelShape probeShape = Shapes.create(probe);
+        VoxelShape bodyShape = Shapes.create(body.deflate(0.001));
+
+        List<BlockPos> out = new ArrayList<>();
+        BlockPos min = BlockPos.containing(probe.minX, probe.minY, probe.minZ);
+        BlockPos max = BlockPos.containing(probe.maxX, probe.maxY - 0.01, probe.maxZ);
+        for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
+            BlockState state = level.getBlockState(pos);
+            if (state.isAir() || !isGlassTarget(level, pos, state)) continue;
+
+            VoxelShape shape = state.getCollisionShape(level, pos)
+                    .move(pos.getX(), pos.getY(), pos.getZ());
+            if (shape.isEmpty()) continue;
+            if (!Shapes.joinIsNotEmpty(shape, probeShape, BooleanOp.AND)) continue;
+            if (Shapes.joinIsNotEmpty(shape, bodyShape, BooleanOp.AND)) continue;
+
+            out.add(pos.immutable());
+            if (out.size() >= 8) break;
+        }
+        return out;
+    }
+
+    private static boolean isGlassTarget(ServerLevel level, BlockPos pos, BlockState state) {
+        if (state.is(BetterGlassBreaking.PANE.get()) || state.is(BetterGlassBreaking.CUBE.get())) {
+            return true; // already-damaged glass: keep breaking what's left of it
+        }
+        return PaneImpacts.eligibleAt(level, pos);
+    }
+
+    private static boolean impact(ServerLevel level, ServerPlayer p, BlockPos pos, Vec3 dir, double speed) {
+        GameplayConfig cfg = withArrows(GlassConfig.current());
+        SourceFacts facts = new SourceFacts(Source.ARROW, speed, CompatConfig.IMPACT_ENERGY.get(), 0);
+
+        Vec3 n = new Vec3(-dir.z, 0, dir.x);
+        Vec3 center = Vec3.atCenterOf(pos);
+        double lateral = clamp(p.position().subtract(center).dot(n), -0.25, 0.25);
+        int cols = CompatConfig.IMPACT_COLUMNS.get();
+        int rows = CompatConfig.IMPACT_ROWS.get();
+        double colStep = cols <= 1 ? 0.0 : cols == 2 ? 0.30 : 0.25;
+        Vec3 motion = dir.scale(1.8);
+
+        boolean accepted = false;
+        for (int r = 0; r < rows; r++) {
+            double frac = rows == 1 ? 0.5 : 0.15 + 0.70 * r / (rows - 1.0);
+            double y = pos.getY() + frac;
+            for (int c = 0; c < cols; c++) {
+                double off = lateral + (c - (cols - 1) / 2.0) * colStep;
+                Vec3 start = new Vec3(center.x, y, center.z).add(n.scale(off)).subtract(dir.scale(0.9));
+                accepted |= PaneImpacts.enqueue(level, pos, start, motion, facts, cfg, p,
+                        ItemStack.EMPTY, null, false, false);
+            }
+        }
+        return accepted;
+    }
+
+    /** Sprint impacts must work even if the server turned arrow damage off in BGB's config. */
+    private static GameplayConfig withArrows(GameplayConfig c) {
+        if (c.arrows()) return c;
+        return new GameplayConfig(true, c.projectiles(), c.explosions(), c.melee(), c.strength(), c.holeSize(),
+                c.drops(), c.healing(), c.healDelayTicks(), c.healIntervalTicks(), c.maxWebs(), c.propagation(),
+                c.policy(), c.shatterThreshold(), c.taczCompat(), c.taczDamageMultiplier(), c.bulletGlassToughness());
+    }
+
+    private static double clamp(double v, double lo, double hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+}
