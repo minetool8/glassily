@@ -1,6 +1,7 @@
 package dev.glassbreakcompat;
 
 import dev.betterglassbreaking.core.GameplayConfig;
+import org.slf4j.Logger;
 import dev.betterglassbreaking.core.GameplayRules.Source;
 import dev.betterglassbreaking.core.GameplayRules.SourceFacts;
 import dev.betterglassbreaking.forge.BetterGlassBreaking;
@@ -31,6 +32,8 @@ import java.util.UUID;
  * impacts across the player's body so it carves its normal procedural, permanent, synced opening.
  */
 public final class SprintImpactHandler {
+
+    private static final Logger LOG = GlassBreakCompat.LOGGER;
 
     private static final class Track {
         double lastX, lastZ;
@@ -79,8 +82,15 @@ public final class SprintImpactHandler {
         if (targets.isEmpty()) return;
 
         boolean any = false;
+        int accepted = 0;
         for (BlockPos pos : targets) {
-            any |= impact(level, p, pos, dir, Math.max(t.peak, 0.28));
+            boolean ok = impact(level, p, pos, dir, Math.max(t.peak, 0.28));
+            any |= ok;
+            if (ok) accepted++;
+        }
+        if (CompatConfig.DEBUG.get()) {
+            LOG.info("[glassbreakcompat] sprint impact: player={} targets={} accepted={} peakSpeed={}",
+                    p.getName().getString(), targets, accepted, String.format("%.3f", t.peak));
         }
         if (any) t.nextTick = now + CompatConfig.COOLDOWN_TICKS.get();
     }
@@ -93,7 +103,7 @@ public final class SprintImpactHandler {
     /** Glass blocks that the player is pressing against, i.e. in front of them but not already overlapping. */
     private static List<BlockPos> findTargets(ServerLevel level, ServerPlayer p, Vec3 dir) {
         AABB body = p.getBoundingBox();
-        AABB probe = body.move(dir.x * 0.45, 0, dir.z * 0.45);
+        AABB probe = body.move(dir.x * 0.6, 0, dir.z * 0.6);
         VoxelShape probeShape = Shapes.create(probe);
         VoxelShape bodyShape = Shapes.create(body.deflate(0.001));
 
@@ -102,7 +112,7 @@ public final class SprintImpactHandler {
         BlockPos max = BlockPos.containing(probe.maxX, probe.maxY - 0.01, probe.maxZ);
         for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
             BlockState state = level.getBlockState(pos);
-            if (state.isAir() || !isGlassTarget(level, pos, state)) continue;
+            if (state.isAir() || !handledByBgb(level, pos, state)) continue;
 
             VoxelShape shape = state.getCollisionShape(level, pos)
                     .move(pos.getX(), pos.getY(), pos.getZ());
@@ -116,7 +126,8 @@ public final class SprintImpactHandler {
         return out;
     }
 
-    private static boolean isGlassTarget(ServerLevel level, BlockPos pos, BlockState state) {
+    /** True when Better Glass Breaking can break this block (intact glass or already-damaged glass). */
+    public static boolean handledByBgb(ServerLevel level, BlockPos pos, BlockState state) {
         if (state.is(BetterGlassBreaking.PANE.get()) || state.is(BetterGlassBreaking.CUBE.get())) {
             return true; // already-damaged glass: keep breaking what's left of it
         }

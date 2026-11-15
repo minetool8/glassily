@@ -16,6 +16,7 @@ public final class CompatConfig {
     public static final ForgeConfigSpec.IntValue IMPACT_ROWS;
     public static final ForgeConfigSpec.BooleanValue REPLACE_KICKSHATTER;
     public static final ForgeConfigSpec.BooleanValue TACZ_FALLBACK;
+    public static final ForgeConfigSpec.BooleanValue DEBUG;
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> NAME_KEYWORDS;
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> NAME_EXCLUDES;
 
@@ -23,6 +24,8 @@ public final class CompatConfig {
 
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
+
+        DEBUG = b.comment("Log what the sprint-impact code is doing (turn off once it works).").define("debug", true);
 
         b.push("sprint");
         SPRINT_BREAK = b.comment("Sprinting into glass fractures it with Better Glass Breaking's procedural system.")
