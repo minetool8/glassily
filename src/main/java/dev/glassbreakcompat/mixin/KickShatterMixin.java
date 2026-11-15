@@ -24,7 +24,7 @@ public abstract class KickShatterMixin {
                     target = "Lkickshatter/WindowBreaker;smash(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/core/BlockPos;)V",
                     remap = false),
             remap = false, require = 0)
-    private static void glassbreakcompat$smash(ServerLevel level, BlockPos pos) {
+    private void glassbreakcompat$smash(ServerLevel level, BlockPos pos) {
         if (CompatConfig.REPLACE_KICKSHATTER.get()
                 && SprintImpactHandler.handledByBgb(level, pos, level.getBlockState(pos))) {
             return; // procedural break is done by SprintImpactHandler
