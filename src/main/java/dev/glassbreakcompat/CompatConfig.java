@@ -14,6 +14,8 @@ public final class CompatConfig {
     public static final ForgeConfigSpec.DoubleValue IMPACT_ENERGY;
     public static final ForgeConfigSpec.IntValue IMPACT_COLUMNS;
     public static final ForgeConfigSpec.IntValue IMPACT_ROWS;
+    public static final ForgeConfigSpec.BooleanValue NEIGHBOR_CRACKS;
+    public static final ForgeConfigSpec.DoubleValue NEIGHBOR_POWER;
     public static final ForgeConfigSpec.BooleanValue REPLACE_KICKSHATTER;
     public static final ForgeConfigSpec.BooleanValue TACZ_FALLBACK;
     public static final ForgeConfigSpec.BooleanValue DEBUG;
@@ -36,12 +38,16 @@ public final class CompatConfig {
                 .defineInRange("minSpeed", 0.12, 0.0, 2.0);
         COOLDOWN_TICKS = b.comment("Ticks before the same player can trigger another sprint impact.")
                 .defineInRange("cooldownTicks", 8, 0, 200);
-        IMPACT_ENERGY = b.comment("Energy of each fracture point. 8+ is enough for a full hit; lower values leave more shards.")
-                .defineInRange("impactEnergy", 8.0, 0.5, 64.0);
+        IMPACT_ENERGY = b.comment("Power of each fracture point, fed to Better Glass Breaking's arrow rules (not linear: 8 only cracks, 20 breaks most of a pane, 40 shatters it). Raise for bigger breaks.")
+                .defineInRange("impactPower", 40.0, 1.0, 200.0);
         IMPACT_COLUMNS = b.comment("Fracture points across the width of each glass block. 2 gives a player-wide opening.")
                 .defineInRange("impactColumns", 2, 1, 3);
         IMPACT_ROWS = b.comment("Fracture points up the height of each glass block.")
                 .defineInRange("impactRows", 3, 1, 4);
+        NEIGHBOR_CRACKS = b.comment("Crack (but do not break) intact glass touching the pane or block that broke.")
+                .define("neighborCracks", true);
+        NEIGHBOR_POWER = b.comment("Power of the crack impacts on neighbouring glass. About 6 only cracks; raise it and neighbours start to chip or break. 0 turns it off.")
+                .defineInRange("neighborCrackPower", 6.0, 0.0, 40.0);
         b.pop();
 
         b.push("kickshatter");

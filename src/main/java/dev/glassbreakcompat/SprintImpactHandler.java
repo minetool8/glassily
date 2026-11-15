@@ -8,6 +8,7 @@ import dev.betterglassbreaking.forge.BetterGlassBreaking;
 import dev.betterglassbreaking.forge.GlassConfig;
 import dev.betterglassbreaking.forge.PaneImpacts;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
@@ -23,6 +24,8 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -87,6 +90,9 @@ public final class SprintImpactHandler {
             boolean ok = impact(level, p, pos, dir, Math.max(t.peak, 0.28));
             any |= ok;
             if (ok) accepted++;
+        }
+        if (any && CompatConfig.NEIGHBOR_CRACKS.get()) {
+            crackNeighbors(level, p, targets, dir);
         }
         if (CompatConfig.DEBUG.get()) {
             LOG.info("[glassbreakcompat] sprint impact: player={} targets={} accepted={} peakSpeed={}",
@@ -158,6 +164,38 @@ public final class SprintImpactHandler {
             }
         }
         return accepted;
+    }
+
+    /** Light impacts on intact glass touching the broken blocks: cracks only, never a break. */
+    private static void crackNeighbors(ServerLevel level, ServerPlayer p, List<BlockPos> targets, Vec3 dir) {
+        double power = CompatConfig.NEIGHBOR_POWER.get();
+        if (power <= 0) return;
+        GameplayConfig cfg = withArrows(GlassConfig.current());
+        SourceFacts facts = new SourceFacts(Source.ARROW, 0.3, power, 0);
+        Vec3 motion = dir.scale(1.8);
+        Vec3 n = new Vec3(-dir.z, 0, dir.x);
+
+        Set<BlockPos> seen = new HashSet<>(targets);
+        for (BlockPos t : targets) {
+            for (Direction d : Direction.values()) {
+                BlockPos np = t.relative(d);
+                if (!seen.add(np)) continue;
+                BlockState st = level.getBlockState(np);
+                if (st.isAir() || st.is(BetterGlassBreaking.PANE.get()) || st.is(BetterGlassBreaking.CUBE.get())) continue;
+                if (!PaneImpacts.eligibleAt(level, np)) continue;
+
+                Vec3 towardBrokenSide = new Vec3(-d.getStepX(), -d.getStepY(), -d.getStepZ()).scale(0.35);
+                Vec3 center = Vec3.atCenterOf(np).add(towardBrokenSide);
+                for (int i = 0; i < 2; i++) {
+                    double side = i == 0 ? -0.12 : 0.12;
+                    double up = i == 0 ? 0.10 : -0.10;
+                    Vec3 aim = center.add(n.scale(side)).add(0, up, 0);
+                    Vec3 start = aim.subtract(dir.scale(0.9));
+                    PaneImpacts.enqueue(level, np, start, motion, facts, cfg, p,
+                            ItemStack.EMPTY, null, false, false);
+                }
+            }
+        }
     }
 
     /** Sprint impacts must work even if the server turned arrow damage off in BGB's config. */
