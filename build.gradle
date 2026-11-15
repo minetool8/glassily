@@ -1,0 +1,54 @@
+plugins {
+    id 'java'
+    id 'net.minecraftforge.gradle' version '[6.0.24,6.2)'
+    id 'org.spongepowered.mixin' version '0.7.+'
+}
+
+group = 'dev.glassbreakcompat'
+version = project.mod_version
+base { archivesName = project.mod_id }
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: 'official', version: project.minecraft_version
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.logging.console.level', 'debug'
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+        }
+        server { }
+        client { }
+    }
+}
+
+mixin {
+    add sourceSets.main, 'glassbreakcompat.refmap.json'
+    config 'glassbreakcompat.mixins.json'
+}
+
+repositories {
+    maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${project.minecraft_version}-${project.forge_version}"
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+
+    // The three mods this project talks to. Only their API/signatures are needed at compile time.
+    compileOnly fileTree(dir: 'libs', include: '*.jar')
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-Xlint:-classfile', '-Xlint:-processing']
+}
+
+jar {
+    manifest.attributes([
+        'MixinConfigs': 'glassbreakcompat.mixins.json'
+    ])
+    finalizedBy 'reobfJar'
+}
