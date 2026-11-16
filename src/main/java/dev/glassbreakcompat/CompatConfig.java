@@ -16,6 +16,7 @@ public final class CompatConfig {
     public static final ForgeConfigSpec.IntValue IMPACT_ROWS;
     public static final ForgeConfigSpec.BooleanValue NEIGHBOR_CRACKS;
     public static final ForgeConfigSpec.DoubleValue NEIGHBOR_POWER;
+    public static final ForgeConfigSpec.BooleanValue ALLOW_ADVENTURE;
     public static final ForgeConfigSpec.BooleanValue REPLACE_KICKSHATTER;
     public static final ForgeConfigSpec.BooleanValue TACZ_FALLBACK;
     public static final ForgeConfigSpec.BooleanValue DEBUG;
@@ -48,6 +49,12 @@ public final class CompatConfig {
                 .define("neighborCracks", true);
         NEIGHBOR_POWER = b.comment("Power of the crack impacts on neighbouring glass. About 6 only cracks; raise it and neighbours start to chip or break. 0 turns it off.")
                 .defineInRange("neighborCrackPower", 6.0, 0.0, 40.0);
+        b.pop();
+
+        b.push("permissions");
+        ALLOW_ADVENTURE = b.comment("Let players in adventure mode break glass by sprinting or shooting. "
+                        + "Better Glass Breaking normally refuses impacts from players who cannot build.")
+                .define("allowAdventureMode", true);
         b.pop();
 
         b.push("kickshatter");

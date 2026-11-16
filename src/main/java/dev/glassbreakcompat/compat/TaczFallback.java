@@ -10,6 +10,7 @@ import dev.betterglassbreaking.forge.GlassConfig;
 import dev.betterglassbreaking.forge.PaneImpacts;
 import dev.betterglassbreaking.forge.compat.TaczCompat;
 import dev.glassbreakcompat.CompatConfig;
+import dev.glassbreakcompat.SprintImpactHandler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
@@ -51,7 +52,7 @@ public final class TaczFallback {
         Vec3 start = hit.getLocation().subtract(dir.scale(0.3));
 
         boolean accepted = PaneImpacts.enqueue(level, pos, start, dir.scale(1.6), facts, cfg,
-                bullet.getOwner(), ItemStack.EMPTY, null, false, false);
+                SprintImpactHandler.actor(bullet.getOwner()), ItemStack.EMPTY, null, false, false);
         if (accepted && e.isCancelable()) {
             e.setCanceled(true); // stop TACZ's own glass deletion from also firing
         }

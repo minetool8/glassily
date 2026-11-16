@@ -10,6 +10,7 @@ import dev.betterglassbreaking.forge.PaneImpacts;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
@@ -132,6 +133,17 @@ public final class SprintImpactHandler {
         return out;
     }
 
+    /**
+     * The entity to hand Better Glass Breaking as the impact source. It rejects players who may not build
+     * (adventure mode), so those impacts are sent without a player source.
+     */
+    public static Entity actor(Entity e) {
+        if (e instanceof ServerPlayer sp && !sp.getAbilities().mayBuild && CompatConfig.ALLOW_ADVENTURE.get()) {
+            return null;
+        }
+        return e;
+    }
+
     /** True when Better Glass Breaking can break this block (intact glass or already-damaged glass). */
     public static boolean handledByBgb(ServerLevel level, BlockPos pos, BlockState state) {
         if (state.is(BetterGlassBreaking.PANE.get()) || state.is(BetterGlassBreaking.CUBE.get())) {
@@ -159,7 +171,7 @@ public final class SprintImpactHandler {
             for (int c = 0; c < cols; c++) {
                 double off = lateral + (c - (cols - 1) / 2.0) * colStep;
                 Vec3 start = new Vec3(center.x, y, center.z).add(n.scale(off)).subtract(dir.scale(0.9));
-                accepted |= PaneImpacts.enqueue(level, pos, start, motion, facts, cfg, p,
+                accepted |= PaneImpacts.enqueue(level, pos, start, motion, facts, cfg, actor(p),
                         ItemStack.EMPTY, null, false, false);
             }
         }
@@ -191,7 +203,7 @@ public final class SprintImpactHandler {
                     double up = i == 0 ? 0.10 : -0.10;
                     Vec3 aim = center.add(n.scale(side)).add(0, up, 0);
                     Vec3 start = aim.subtract(dir.scale(0.9));
-                    PaneImpacts.enqueue(level, np, start, motion, facts, cfg, p,
+                    PaneImpacts.enqueue(level, np, start, motion, facts, cfg, actor(p),
                             ItemStack.EMPTY, null, false, false);
                 }
             }
