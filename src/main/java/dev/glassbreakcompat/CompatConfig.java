@@ -16,6 +16,12 @@ public final class CompatConfig {
     public static final ForgeConfigSpec.IntValue IMPACT_ROWS;
     public static final ForgeConfigSpec.BooleanValue NEIGHBOR_CRACKS;
     public static final ForgeConfigSpec.DoubleValue NEIGHBOR_POWER;
+    public static final ForgeConfigSpec.IntValue LOOKAHEAD_TICKS;
+    public static final ForgeConfigSpec.BooleanValue MELEE_BREAK;
+    public static final ForgeConfigSpec.DoubleValue MELEE_POWER;
+    public static final ForgeConfigSpec.BooleanValue FALL_BREAK;
+    public static final ForgeConfigSpec.DoubleValue FALL_MIN_DISTANCE;
+    public static final ForgeConfigSpec.DoubleValue FALL_POWER;
     public static final ForgeConfigSpec.BooleanValue ALLOW_ADVENTURE;
     public static final ForgeConfigSpec.BooleanValue REPLACE_KICKSHATTER;
     public static final ForgeConfigSpec.BooleanValue TACZ_FALLBACK;
@@ -23,7 +29,8 @@ public final class CompatConfig {
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> NAME_KEYWORDS;
     public static final ForgeConfigSpec.ConfigValue<List<? extends String>> NAME_EXCLUDES;
 
-    public static final List<String> DEFAULT_KEYWORDS = List.of("glass", "pane", "window");
+    public static final List<String> DEFAULT_KEYWORDS = List.of("glass", "window");
+    public static final List<String> DEFAULT_EXCLUDES = List.of("hourglass", "shutter", "paneling");
 
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
@@ -45,10 +52,28 @@ public final class CompatConfig {
                 .defineInRange("impactColumns", 2, 1, 3);
         IMPACT_ROWS = b.comment("Fracture points up the height of each glass block.")
                 .defineInRange("impactRows", 3, 1, 4);
+        LOOKAHEAD_TICKS = b.comment("How many ticks ahead of the player glass is detected. Higher breaks it earlier so you are not stopped by it; too high breaks it from far away.")
+                .defineInRange("lookAheadTicks", 5, 1, 20);
         NEIGHBOR_CRACKS = b.comment("Crack (but do not break) intact glass touching the pane or block that broke.")
                 .define("neighborCracks", true);
         NEIGHBOR_POWER = b.comment("Power of the crack impacts on neighbouring glass. About 6 only cracks; raise it and neighbours start to chip or break. 0 turns it off.")
                 .defineInRange("neighborCrackPower", 6.0, 0.0, 40.0);
+        b.pop();
+
+        b.push("fall");
+        FALL_BREAK = b.comment("Falling onto glass from far enough breaks it (procedural for supported glass, normal break for the rest).")
+                .define("enabled", true);
+        FALL_MIN_DISTANCE = b.comment("Minimum fall distance in blocks.")
+                .defineInRange("minDistance", 5.0, 1.0, 256.0);
+        FALL_POWER = b.comment("Fracture power of a landing (same scale as impactPower).")
+                .defineInRange("power", 40.0, 1.0, 200.0);
+        b.pop();
+
+        b.push("melee");
+        MELEE_BREAK = b.comment("Better Combat swings break glass inside the attack's hitbox.")
+                .define("enabled", true);
+        MELEE_POWER = b.comment("Fracture power per hit point. Each point only opens part of a pane, so wider hitboxes break more. About 24 is a solid hit.")
+                .defineInRange("power", 24.0, 1.0, 200.0);
         b.pop();
 
         b.push("permissions");
@@ -70,11 +95,11 @@ public final class CompatConfig {
         b.pop();
 
         b.push("matching");
-        NAME_KEYWORDS = b.comment("Any block whose registry path contains one of these words is treated as breakable glass, "
-                        + "as long as it is a full cube or a pane-style block.")
-                .defineListAllowEmpty("keywords", DEFAULT_KEYWORDS, o -> o instanceof String);
-        NAME_EXCLUDES = b.comment("Registry paths containing any of these words are never treated as glass.")
-                .defineListAllowEmpty("excludeKeywords", List.of(), o -> o instanceof String);
+        NAME_KEYWORDS = b.comment("Blocks whose registry path contains one of these words are treated as breakable glass. "
+                        + "Full cubes and pane-style blocks break procedurally; other shapes (slabs, arches, vertical slabs) break normally.")
+                .defineListAllowEmpty("glassKeywords", DEFAULT_KEYWORDS, o -> o instanceof String);
+        NAME_EXCLUDES = b.comment("Registry paths containing any of these words are never treated as glass. Doors, trapdoors and fence gates are always excluded.")
+                .defineListAllowEmpty("excludedWords", DEFAULT_EXCLUDES, o -> o instanceof String);
         b.pop();
 
         SPEC = b.build();

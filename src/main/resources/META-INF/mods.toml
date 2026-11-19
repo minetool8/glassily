@@ -42,3 +42,10 @@ mandatory=false
 versionRange="[1,)"
 ordering="AFTER"
 side="BOTH"
+
+[[dependencies.glassbreakcompat]]
+modId="bettercombat"
+mandatory=false
+versionRange="[1.9.0,)"
+ordering="AFTER"
+side="BOTH"

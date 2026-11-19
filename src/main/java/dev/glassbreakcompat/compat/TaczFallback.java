@@ -10,6 +10,7 @@ import dev.betterglassbreaking.forge.GlassConfig;
 import dev.betterglassbreaking.forge.PaneImpacts;
 import dev.betterglassbreaking.forge.compat.TaczCompat;
 import dev.glassbreakcompat.CompatConfig;
+import dev.glassbreakcompat.GlassImpacts;
 import dev.glassbreakcompat.SprintImpactHandler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -20,8 +21,10 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.EventPriority;
 
 /**
- * Only used when TACZ is installed. Better Glass Breaking ships its own TACZ adapter; this is a safety net
- * for when that adapter switches itself off (for example after a TACZ update changes internals).
+ * Only used when TACZ is installed.
+ * - Glass Better Glass Breaking can model: its own TACZ adapter handles it; this is the safety net when
+ *   that adapter is switched off.
+ * - Glass-named blocks it cannot model (slabs, arches, vertical slabs...): broken normally here.
  */
 public final class TaczFallback {
     private TaczFallback() {}
@@ -31,15 +34,27 @@ public final class TaczFallback {
     }
 
     private static void onHit(AmmoHitBlockEvent e) {
-        if (!CompatConfig.TACZ_FALLBACK.get()) return;
-        if (TaczCompat.active()) return; // BGB's native adapter is handling bullets
         if (!(e.getLevel() instanceof ServerLevel level)) return;
 
         BlockHitResult hit = e.getHitResult();
         BlockPos pos = hit.getBlockPos();
+        EntityKineticBullet bullet = e.getAmmo();
+
+        GlassImpacts.Kind kind = GlassImpacts.classify(level, pos, level.getBlockState(pos));
+        if (kind == GlassImpacts.Kind.NONE) return;
+
+        if (kind == GlassImpacts.Kind.NORMAL) {
+            if (GlassImpacts.normalBreak(level, pos, SprintImpactHandler.actor(bullet.getOwner())) && e.isCancelable()) {
+                e.setCanceled(true); // bullet carries on through the broken glass
+            }
+            return;
+        }
+
+        // Kind.BGB
+        if (!CompatConfig.TACZ_FALLBACK.get()) return;
+        if (TaczCompat.active()) return; // BGB's native adapter is handling bullets
         if (!PaneImpacts.eligibleAt(level, pos)) return;
 
-        EntityKineticBullet bullet = e.getAmmo();
         Vec3 motion = bullet.getDeltaMovement();
         if (motion.lengthSqr() < 1.0e-6) return;
 

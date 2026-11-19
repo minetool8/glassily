@@ -4,7 +4,7 @@
   "package": "dev.glassbreakcompat.mixin",
   "compatibilityLevel": "JAVA_17",
   "refmap": "glassbreakcompat.refmap.json",
-  "mixins": ["PaneImpactsMixin", "KickShatterMixin"],
+  "mixins": ["PaneImpactsMixin", "KickShatterMixin", "BetterCombatMixin"],
   "client": ["ParticleMixin"],
   "injectors": { "defaultRequire": 1 }
 }

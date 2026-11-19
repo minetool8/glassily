@@ -82,18 +82,27 @@ public final class SprintImpactHandler {
         }
         dir = dir.normalize();
 
-        List<BlockPos> targets = findTargets(level, p, dir);
+        double lead = Mth.clamp(t.peak * CompatConfig.LOOKAHEAD_TICKS.get(), 0.7, 2.2);
+        List<BlockPos> targets = findTargets(level, p, dir, lead);
         if (targets.isEmpty()) return;
 
         boolean any = false;
         int accepted = 0;
+        List<BlockPos> procedural = new ArrayList<>();
         for (BlockPos pos : targets) {
-            boolean ok = impact(level, p, pos, dir, Math.max(t.peak, 0.28));
+            GlassImpacts.Kind kind = GlassImpacts.classify(level, pos, level.getBlockState(pos));
+            boolean ok;
+            if (kind == GlassImpacts.Kind.BGB) {
+                ok = impact(level, p, pos, dir, Math.max(t.peak, 0.28));
+                if (ok) procedural.add(pos);
+            } else {
+                ok = GlassImpacts.normalBreak(level, pos, actor(p)); // glass Better Glass Breaking cannot model
+            }
             any |= ok;
             if (ok) accepted++;
         }
-        if (any && CompatConfig.NEIGHBOR_CRACKS.get()) {
-            crackNeighbors(level, p, targets, dir);
+        if (!procedural.isEmpty() && CompatConfig.NEIGHBOR_CRACKS.get()) {
+            crackNeighbors(level, p, procedural, dir);
         }
         if (CompatConfig.DEBUG.get()) {
             LOG.info("[glassbreakcompat] sprint impact: player={} targets={} accepted={} peakSpeed={}",
@@ -108,9 +117,9 @@ public final class SprintImpactHandler {
     }
 
     /** Glass blocks that the player is pressing against, i.e. in front of them but not already overlapping. */
-    private static List<BlockPos> findTargets(ServerLevel level, ServerPlayer p, Vec3 dir) {
+    private static List<BlockPos> findTargets(ServerLevel level, ServerPlayer p, Vec3 dir, double lead) {
         AABB body = p.getBoundingBox();
-        AABB probe = body.move(dir.x * 0.6, 0, dir.z * 0.6);
+        AABB probe = body.expandTowards(dir.x * lead, 0, dir.z * lead);
         VoxelShape probeShape = Shapes.create(probe);
         VoxelShape bodyShape = Shapes.create(body.deflate(0.001));
 
@@ -119,7 +128,7 @@ public final class SprintImpactHandler {
         BlockPos max = BlockPos.containing(probe.maxX, probe.maxY - 0.01, probe.maxZ);
         for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
             BlockState state = level.getBlockState(pos);
-            if (state.isAir() || !handledByBgb(level, pos, state)) continue;
+            if (GlassImpacts.classify(level, pos, state) == GlassImpacts.Kind.NONE) continue;
 
             VoxelShape shape = state.getCollisionShape(level, pos)
                     .move(pos.getX(), pos.getY(), pos.getZ());
@@ -179,7 +188,7 @@ public final class SprintImpactHandler {
     }
 
     /** Light impacts on intact glass touching the broken blocks: cracks only, never a break. */
-    private static void crackNeighbors(ServerLevel level, ServerPlayer p, List<BlockPos> targets, Vec3 dir) {
+    public static void crackNeighbors(ServerLevel level, ServerPlayer p, List<BlockPos> targets, Vec3 dir) {
         double power = CompatConfig.NEIGHBOR_POWER.get();
         if (power <= 0) return;
         GameplayConfig cfg = withArrows(GlassConfig.current());
@@ -211,7 +220,7 @@ public final class SprintImpactHandler {
     }
 
     /** Sprint impacts must work even if the server turned arrow damage off in BGB's config. */
-    private static GameplayConfig withArrows(GameplayConfig c) {
+    public static GameplayConfig withArrows(GameplayConfig c) {
         if (c.arrows()) return c;
         return new GameplayConfig(true, c.projectiles(), c.explosions(), c.melee(), c.strength(), c.holeSize(),
                 c.drops(), c.healing(), c.healDelayTicks(), c.healIntervalTicks(), c.maxWebs(), c.propagation(),

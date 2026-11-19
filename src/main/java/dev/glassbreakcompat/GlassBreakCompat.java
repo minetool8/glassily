@@ -28,6 +28,7 @@ public class GlassBreakCompat {
                 (ModConfigEvent.Reloading e) -> GlassNames.clearCache());
 
         MinecraftForge.EVENT_BUS.register(new SprintImpactHandler());
+        MinecraftForge.EVENT_BUS.register(new FallHandler());
         MinecraftForge.EVENT_BUS.addListener(this::onServerStarted);
 
         if (FMLEnvironment.dist == Dist.CLIENT) {
