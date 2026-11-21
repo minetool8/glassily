@@ -83,7 +83,7 @@ public final class SprintImpactHandler {
         }
         dir = dir.normalize();
 
-        double lead = Mth.clamp(t.peak * CompatConfig.LOOKAHEAD_TICKS.get(), 0.7, 2.2);
+        double lead = CompatConfig.CONTACT_REACH.get();
         List<BlockPos> targets = findTargets(level, p, dir, lead);
         if (targets.isEmpty()) return;
 

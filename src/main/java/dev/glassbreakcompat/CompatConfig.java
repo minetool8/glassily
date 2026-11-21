@@ -16,7 +16,8 @@ public final class CompatConfig {
     public static final ForgeConfigSpec.IntValue IMPACT_ROWS;
     public static final ForgeConfigSpec.BooleanValue NEIGHBOR_CRACKS;
     public static final ForgeConfigSpec.DoubleValue NEIGHBOR_POWER;
-    public static final ForgeConfigSpec.IntValue LOOKAHEAD_TICKS;
+    public static final ForgeConfigSpec.DoubleValue CONTACT_REACH;
+    public static final ForgeConfigSpec.IntValue MELEE_MAX_BLOCKS;
     public static final ForgeConfigSpec.BooleanValue MELEE_BREAK;
     public static final ForgeConfigSpec.DoubleValue MELEE_POWER;
     public static final ForgeConfigSpec.BooleanValue FALL_BREAK;
@@ -52,8 +53,8 @@ public final class CompatConfig {
                 .defineInRange("impactColumns", 2, 1, 3);
         IMPACT_ROWS = b.comment("Fracture points up the height of each glass block.")
                 .defineInRange("impactRows", 3, 1, 4);
-        LOOKAHEAD_TICKS = b.comment("How many ticks ahead of the player glass is detected. Higher breaks it earlier so you are not stopped by it; too high breaks it from far away.")
-                .defineInRange("lookAheadTicks", 5, 1, 20);
+        CONTACT_REACH = b.comment("How far in front of the player's hitbox (in blocks) glass counts as touching. 0.1 = glass breaks when it touches you. Raise it only if glass stops you before it breaks.")
+                .defineInRange("contactReach", 0.1, 0.0, 1.0);
         NEIGHBOR_CRACKS = b.comment("Crack (but do not break) intact glass touching the pane or block that broke.")
                 .define("neighborCracks", true);
         NEIGHBOR_POWER = b.comment("Power of the crack impacts on neighbouring glass. About 6 only cracks; raise it and neighbours start to chip or break. 0 turns it off.")
@@ -72,6 +73,8 @@ public final class CompatConfig {
         b.push("melee");
         MELEE_BREAK = b.comment("Better Combat swings break glass inside the attack's hitbox.")
                 .define("enabled", true);
+        MELEE_MAX_BLOCKS = b.comment("Most glass blocks one swing can break (nearest to the player first).")
+                .defineInRange("maxBlocksPerSwing", 2, 1, 6);
         MELEE_POWER = b.comment("Fracture power per hit point. Each point only opens part of a pane, so wider hitboxes break more. About 24 is a solid hit.")
                 .defineInRange("power", 24.0, 1.0, 200.0);
         b.pop();

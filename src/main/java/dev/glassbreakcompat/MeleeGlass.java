@@ -6,27 +6,41 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.ClipContext;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
  * Better Combat swing -> glass. The attack's hitbox shape and range are rebuilt as an oriented box in front of
  * the player. Glass Better Glass Breaking supports gets one fracture ray per sample point that lies inside the
  * box, so the broken area follows the hitbox. Other glass-named blocks inside the box break normally.
+ * At most {@code maxBlocksPerSwing} blocks (nearest first) are affected per swing.
  */
 public final class MeleeGlass {
     private static final double[] SAMPLES = {0.2, 0.5, 0.8};
-    private static final int MAX_BLOCKS = 16;
+
+    private record Candidate(BlockPos pos, GlassImpacts.Kind kind, List<Vec3> inside, double dist) {}
 
     private MeleeGlass() {}
 
     public static void swing(ServerPlayer p, ServerLevel level, double attackRange, HitBoxShape shape, double damageMultiplier) {
+        if (CompatConfig.DEBUG.get()) {
+            GlassBreakCompat.LOGGER.info("[glassbreakcompat] Better Combat attack received: player={} range={} shape={}",
+                    p.getName().getString(), attackRange, shape);
+        }
+        try {
+            doSwing(p, level, attackRange, shape == null ? HitBoxShape.FORWARD_BOX : shape, damageMultiplier);
+        } catch (Throwable t) {
+            GlassBreakCompat.LOGGER.warn("[glassbreakcompat] melee glass break failed", t);
+        }
+    }
+
+    private static void doSwing(ServerPlayer p, ServerLevel level, double attackRange, HitBoxShape shape, double damageMultiplier) {
         if (!CompatConfig.MELEE_BREAK.get() || p.isSpectator()) return;
 
         Vec3 eye = p.getEyePosition();
@@ -45,7 +59,6 @@ public final class MeleeGlass {
         }
         double depth = reach;
 
-        // world bounds of the oriented box
         double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, minZ = Double.MAX_VALUE;
         double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
         for (int sx = -1; sx <= 1; sx += 2) {
@@ -60,15 +73,10 @@ public final class MeleeGlass {
         }
         AABB bounds = new AABB(minX, minY, minZ, maxX, maxY, maxZ);
 
-        double power = CompatConfig.MELEE_POWER.get() * Mth.clamp(damageMultiplier, 0.7, 1.6);
-        List<BlockPos> procedural = new ArrayList<>();
-        int blocks = 0;
-
+        List<Candidate> found = new ArrayList<>();
         for (BlockPos pos : BlockPos.betweenClosed(BlockPos.containing(bounds.minX, bounds.minY, bounds.minZ),
                 BlockPos.containing(bounds.maxX, bounds.maxY, bounds.maxZ))) {
-            if (blocks >= MAX_BLOCKS) break;
-            BlockState state = level.getBlockState(pos);
-            GlassImpacts.Kind kind = GlassImpacts.classify(level, pos, state);
+            GlassImpacts.Kind kind = GlassImpacts.classify(level, pos, level.getBlockState(pos));
             if (kind == GlassImpacts.Kind.NONE) continue;
 
             List<Vec3> inside = new ArrayList<>();
@@ -80,27 +88,38 @@ public final class MeleeGlass {
                 if (Math.abs(rel.dot(right)) > halfW || Math.abs(rel.dot(up)) > halfH) continue;
                 inside.add(pt);
             }
-            if (inside.isEmpty() || !lineOfSight(level, p, eye, pos)) continue;
-            blocks++;
+            if (inside.isEmpty()) continue;
+            BlockPos fixed = pos.immutable();
+            if (!lineOfSight(level, p, eye, fixed)) continue;
+            found.add(new Candidate(fixed, kind, inside, eye.distanceToSqr(Vec3.atCenterOf(fixed))));
+        }
+        if (found.isEmpty()) return;
 
-            if (kind == GlassImpacts.Kind.NORMAL) {
-                GlassImpacts.normalBreak(level, pos, p);
-            } else {
-                boolean any = false;
-                int step = Math.max(1, inside.size() / 9);
-                for (int i = 0; i < inside.size(); i += step) {
-                    any |= GlassImpacts.impact(level, pos, inside.get(i), fwd, power, p);
-                }
-                if (any) procedural.add(pos.immutable());
+        found.sort(Comparator.comparingDouble(Candidate::dist));
+        int limit = Math.min(CompatConfig.MELEE_MAX_BLOCKS.get(), found.size());
+        double power = CompatConfig.MELEE_POWER.get() * Mth.clamp(damageMultiplier, 0.7, 1.6);
+
+        List<BlockPos> procedural = new ArrayList<>();
+        for (int i = 0; i < limit; i++) {
+            Candidate cand = found.get(i);
+            if (cand.kind() == GlassImpacts.Kind.NORMAL) {
+                GlassImpacts.normalBreak(level, cand.pos(), p);
+                continue;
             }
+            boolean any = false;
+            int step = Math.max(1, cand.inside().size() / 9);
+            for (int k = 0; k < cand.inside().size(); k += step) {
+                any |= GlassImpacts.impact(level, cand.pos(), cand.inside().get(k), fwd, power, p);
+            }
+            if (any) procedural.add(cand.pos());
         }
 
         if (!procedural.isEmpty() && CompatConfig.NEIGHBOR_CRACKS.get()) {
             SprintImpactHandler.crackNeighbors(level, p, procedural, fwd);
         }
-        if (CompatConfig.DEBUG.get() && blocks > 0) {
-            GlassBreakCompat.LOGGER.info("[glassbreakcompat] melee swing: glassBlocks={} procedural={} shape={} reach={}",
-                    blocks, procedural.size(), shape, String.format("%.1f", reach));
+        if (CompatConfig.DEBUG.get()) {
+            GlassBreakCompat.LOGGER.info("[glassbreakcompat] melee swing: candidates={} used={} procedural={} shape={} reach={}",
+                    found.size(), limit, procedural.size(), shape, String.format("%.1f", reach));
         }
     }
 
